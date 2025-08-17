@@ -1,3 +1,11 @@
+/*
+ * type test
+ *
+ * TODO:
+ * - implement cmd + delete (word deletion)
+ * - implement multi line text / code blocks
+ *
+*/
 #include <ncurses.h>
 #include <string.h>
 #include <time.h>
@@ -7,13 +15,23 @@
 #define MAX_TEXT_LEN 1000
 #define MAX_WORDS 50
 
+// State
+#define STATE_IDLE 0
+#define STATE_ACTIVE 1
+#define STATE_ERROR 2
+
+
+
 // TEXT SAMPLES
 const char* sample_texts[] = {
     "The quick brown fox jumps over the lazy dog.",
     "Programming is the art of telling another human what one wants the computer to do.",
     "In the beginning was the Word, and the Word was with God, and the Word was God.",
     "To be or not to be, that is the question.",
-    "All that glitters is not gold, but gold always glitters in the right light."
+    "All that glitters is not gold, but gold always glitters in the right light.",
+
+    // code blocks
+    // "int main() {\n    return 0;\n}"
 };
 
 typedef struct {
@@ -28,10 +46,13 @@ typedef struct {
     int wpm;
     float accuracy;
     int completed;
+    bool state;
 } TypingTest;
 
+// todo refactor
 void init_test(TypingTest* test) {
     int text_index = rand() % (sizeof(sample_texts) / sizeof(sample_texts[0]));
+    // int text_index = 5; // code block
     strlcpy(test->text, sample_texts[text_index], strlen(sample_texts[text_index]));
     test->text_len = strlen(test->text);
     test->typed_len = 0;
@@ -40,6 +61,7 @@ void init_test(TypingTest* test) {
     test->completed = 0;
     test->wpm = 0;
     test->accuracy = 0.0;
+    test->state = STATE_IDLE;
 
     memset(test->typed, 0, sizeof(test->typed));
 }
@@ -49,13 +71,13 @@ void draw_interface(TypingTest* test) {
     
     // Title
     attron(COLOR_PAIR(1) | A_BOLD);
-    mvprintw(1, (COLS - 20) / 2, "TERMINAL TYPING TEST");
+    mvprintw(1, (COLS - 20) / 2, "> type");
     attroff(COLOR_PAIR(1) | A_BOLD);
     
     // Instructions
-    attron(COLOR_PAIR(2));
-    mvprintw(3, 2, "Type the text below. Press ESC to quit, BACKSPACE to correct mistakes.");
-    attroff(COLOR_PAIR(2));
+    // attron(COLOR_PAIR(2));
+    // mvprintw(3, 2, "Type the text below. Press ESC to quit, BACKSPACE to correct mistakes.");
+    // attroff(COLOR_PAIR(2));
     
     // Text to type
     int start_row = 6;
@@ -94,8 +116,6 @@ void draw_interface(TypingTest* test) {
     mvprintw(stats_row, 2, "Progress: %d/%d characters", test->typed_len, test->text_len);
     mvprintw(stats_row + 1, 2, "WPM: %d", test->wpm);
     mvprintw(stats_row + 2, 2, "Accuracy: %.1f%%", test->accuracy);
-
-    mvprintw(stats_row + 10, 2, "Logging", "test");
     attroff(COLOR_PAIR(2));
     
     if (test->completed) {
@@ -133,6 +153,7 @@ void calculate_stats(TypingTest* test) {
         double minutes = elapsed_time / 60.0;
         test->wpm = (int)(words / minutes);
     }
+        draw_interface(test);
 }
 
 void handle_input(TypingTest* test, int ch) {
@@ -141,8 +162,9 @@ void handle_input(TypingTest* test, int ch) {
     if (test->typed_len == 0) {
         // Start timer on first keystroke
         test->start_time = time(NULL);
+        test->state = STATE_ACTIVE;
     }
-    
+
     if (ch == KEY_BACKSPACE || ch == 127 || ch == 8) {
         // Handle backspace
         if (test->typed_len > 0) {
@@ -160,6 +182,7 @@ void handle_input(TypingTest* test, int ch) {
             if (test->typed_len == test->text_len) {
                 test->end_time = time(NULL);
                 test->completed = 1;
+                test->state = STATE_IDLE;
             }
         }
     }
@@ -179,37 +202,37 @@ void setup_colors() {
     }
 }
 
-// TODO: create session and session info to be able to read in more text samples
 int main() {
     srand(time(NULL));
     
-    // Initialize ncurses
+    // init ncurses
     initscr();
     noecho();
     cbreak();
     keypad(stdscr, TRUE);
-    curs_set(0); // Hide cursor
+    curs_set(0); // hide cursor
     
     setup_colors();
     
-    TypingTest test;
-    init_test(&test);
+    TypingTest *test = malloc(sizeof(test));
+    init_test(test);
+
+    draw_interface(test);
     
     int ch;
-    while ((ch = getch()) != 27) { // ESC to quit
-        // TODO: need to handle state in order to detect retry correctly
-        // if (ch == 'r' || ch == 'R') {  TODO: need to handle state in order to detect retry correctly
-        //     // Restart test
-        //     init_test(&test);
-        // } else {
-        //     handle_input(&test, ch);
-        // }
-        handle_input(&test, ch);
-
-        draw_interface(&test);
+    while ((ch = getch()) != 27) {
+        // restart test
+        if (ch == '\n' || ch == '\r' || ch == KEY_ENTER || 
+           (test->state == STATE_IDLE && (ch == 'r' || ch == 'R'))) {
+            init_test(test);
+        } 
+        else {
+            handle_input(test, ch);
+        }
+        draw_interface(test);
     }
     
-    // Cleanup
+    // cleanup
     endwin();
     return 0;
 }
